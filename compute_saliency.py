@@ -164,7 +164,7 @@ def main(args):
             explainer = SimAtt(model, model[0], target_layers=["relu"])
 
         elif args.model == 'resnet50':
-            target_layer = model.layer4[-1].conv3
+            target_layer = model.resnet50[7][-1].conv3
             explainer = SimAtt(
                 model,
                 target_layer,
