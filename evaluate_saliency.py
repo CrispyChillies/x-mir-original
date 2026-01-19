@@ -5,7 +5,7 @@ import torch
 import numpy as np
 from PIL import Image
 import torch.nn as nn
-from model import DenseNet121
+from model import DenseNet121, ResNet50
 from torchvision import transforms
 from evaluation import CausalMetric, gkern
 import argparse
@@ -13,14 +13,17 @@ import argparse
 
 class InsDel():
     def __init__(self,
-                 model):
+                 model,
+                 device='cuda'):
         self.model = model
+        self.device = device
         net_in_size = 224
         klen = 51
         ksig = math.sqrt(50)
         kern = gkern(klen, ksig)
+        kern = kern.to(device)
         def blur(x): return nn.functional.conv2d(
-            x, kern.cuda(), padding=klen//2)
+            x, kern, padding=klen//2)
         self.insertion = CausalMetric(
             self.model, 'ins', net_in_size, substrate_fn=blur)
         self.deletion = CausalMetric(
@@ -42,10 +45,10 @@ class InsDel():
         new_sal = torch.from_numpy(new_sal).float()
         score_del = 0
         zero_cnt_del = 0
-        score_del, zero_cnt_ins = self.deletion.single_run(self.q_image.cuda(),
-                                                           ret_image.cuda(), new_sal, verbose=0)
-        score_ins, zero_cnt_del = self.insertion.single_run(self.q_image.cuda(),
-                                                            ret_image.cuda(),  new_sal, verbose=0)
+        score_del, zero_cnt_ins = self.deletion.single_run(self.q_image.to(self.device),
+                                                           ret_image.to(self.device), new_sal, verbose=0)
+        score_ins, zero_cnt_del = self.insertion.single_run(self.q_image.to(self.device),
+                                                            ret_image.to(self.device),  new_sal, verbose=0)
         return score_del, score_ins, zero_cnt_ins, zero_cnt_del
 
     def load_query(self, query_image):
@@ -97,16 +100,29 @@ def main():
     # Argument parser for configurable parameters
     parser = argparse.ArgumentParser(description='Evaluate saliency maps with configurable parameters.')
     parser.add_argument('--dataset_type', type=str, default='covid', help='Dataset type: covid or isic')
+    parser.add_argument('--model_type', type=str, default='densenet121', choices=['densenet121', 'resnet50'], help='Model architecture: densenet121 or resnet50')
     parser.add_argument('--model_weights', type=str, default='/data/brian.hu/covid_saliency/covid_densenet121_embed_256_seed_1_epoch_20_ckpt.pth', help='Path to model weights')
     parser.add_argument('--main_path', type=str, default='/data/brian.hu/covid_saliency/simatt/', help='Path to saliency maps')
     parser.add_argument('--query_img_path', type=str, default='/data/brian.hu/COVID/data/test/', help='Path to query images')
     parser.add_argument('--csv_path', type=str, default='./ISIC-2017_Test_v2_Part3_GroundTruth_balanced.csv', help='Path to ISIC CSV file (only for isic dataset)')
+    parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'], help='Device to use: cuda or cpu')
     args = parser.parse_args()
 
-    model = DenseNet121()
-    model.load_state_dict(torch.load(args.model_weights), strict=False)
+    # Select device
+    device = torch.device(args.device if torch.cuda.is_available() and args.device == 'cuda' else 'cpu')
+    print(f"Using device: {device}")
+
+    # Load model based on model_type argument
+    if args.model_type == 'densenet121':
+        model = DenseNet121()
+    elif args.model_type == 'resnet50':
+        model = ResNet50()
+    else:
+        raise ValueError(f"Unsupported model type: {args.model_type}")
+    
+    model.load_state_dict(torch.load(args.model_weights, map_location=device), strict=False)
     model = model.eval()
-    model = model.cuda()
+    model = model.to(device)
 
     # Logging counter
     ins_avg_c = AverageCounter()
@@ -158,7 +174,7 @@ def main():
     def prep_image_(file_n):
         query_image = Image.open(os.path.join(
             query_img_path, file_n)).convert('RGB')
-        query_image_tensor = transform(query_image).unsqueeze_(0).cuda()
+        query_image_tensor = transform(query_image).unsqueeze_(0).to(device)
         return query_image_tensor
 
     # NOTE: Edit the final output json files here
@@ -166,7 +182,7 @@ def main():
     f2 = open('./key_list_wacv_test_simatt.json', 'w')
     ins_del_q_dict = {}
     key_dict = {}
-    get_insert_dele = InsDel(model)
+    get_insert_dele = InsDel(model, device)
     for file_n in os.listdir(main_path):
         print(file_n)
         query_image_tensor = prep_image_(file_n)

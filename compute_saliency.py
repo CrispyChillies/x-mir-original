@@ -203,6 +203,7 @@ def main(args):
     print('Evaluating...')
     with torch.set_grad_enabled(args.explainer != 'sbsm'):
         process(explainer, test_loader, device, args)
+    print('Done!')
 
 
 def parse_args():
