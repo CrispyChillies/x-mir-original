@@ -140,7 +140,7 @@ def main():
     if args.dataset_type == 'covid':
         valid_class = ['pneumonia', 'normal']
         # Unravel labels here
-        with open('test_COVIDx4.txt', 'r') as f:
+        with open(args.csv_path, 'r') as f:
             for line in f.readlines():
                 label = line.split()[2]
                 if label not in valid_class:

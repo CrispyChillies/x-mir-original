@@ -15,7 +15,7 @@ class ResNet50(nn.Module):
         # Assumes batchnorm layer is present
         in_features = self.resnet50[7][2].bn3.num_features
         self.fc = nn.Linear(
-            in_features, embedding_dim) if embedding_dim else None
+            in_features, embedding_dim) if embedding_dim else None # it will not create the fc layer if embedding_dim is None
 
     def forward(self, x):
         # extract features
